@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ $# -le 0 ]; then
+	echo "usage: $0 FILE_OR_DIRECTORY"
+	exit
+fi
+
+attr -s com.dropbox.ignored -V 1 $1
+

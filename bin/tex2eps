@@ -1,0 +1,39 @@
+#!/bin/sh
+
+TMP=/tmp/tex2svg
+rm -rf ${TMP}
+mkdir -p ${TMP}
+
+if [ $# -ne 1 ]; then
+	echo "Usage: tex2svg expression"
+	exit 1
+fi
+
+EQN=$1
+
+echo "TeX src: $1"
+
+# .tex 作成
+echo "" >"${TMP}/src.tex"
+echo "\\\documentclass[20pt]{jsarticle}" >>"${TMP}/src.tex"
+echo "\\\usepackage{amsmath, amssymb, bm, braket}" >>"${TMP}/src.tex"
+echo "\\\begin{document}" >>"${TMP}/src.tex"
+echo "\\\thispagestyle{empty}" >>"${TMP}/src.tex"
+echo "\$\$$1\$\$" >>"${TMP}/src.tex"
+echo "\\\end{document}" >>"${TMP}/src.tex"
+
+# 通常のLaTeXコンパイル
+platex -output-directory=${TMP} -interaction=nonstopmode "${TMP}/src.tex"
+if [ $? -ne 0 ]; then
+	echo "Failed to compile. Check the expression!"
+	exit 1
+fi
+# DVIをEPSに変換
+dvips -Ppdf -E "${TMP}/src.dvi" -o "${TMP}/src.eps"
+# EPSをアウトライン化
+eps2eps "${TMP}/src.eps" "${TMP}/src_outline.eps"
+# EPSをSVGに変換
+#pstoedit -f plot-svg "${TMP}/src_outline.eps" "${TMP}/src.svg"
+# コピー
+cp "${TMP}/src_outline.eps" "$HOME/tex2svg.eps"
+

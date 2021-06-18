@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+#
+# Split movies using ffmpeg.
+# Notice: multiple TIMEBASE is not supported.
+#
+
+# Global configuration
+AVCONV = 'ffmpeg'
+
+import argparse
+import tempfile
+import os
+
+# Parse arguments.
+parser = argparse.ArgumentParser(description='Split a movie file using ffsplit.')
+parser.add_argument('FFSPLIT', type=str, help='configuration file')
+parser.add_argument('MOVIE', type=str, help='movie file')
+args = parser.parse_args()
+
+# Saves configuration.
+# movies[n]['metadata'] = (dictionary of global metadata)
+# movies[n]['chapters'][m]['TIMEBASE'] = [numerator, denominator]
+# movies[n]['chapters'][m]['START'] = (start time)
+# movies[n]['chapters'][m]['END'] = (end time)
+# movies[n]['chapters'][m]['metadata'] = (dictionary of per-chapter metadata)
+movies = []
+# Wheter reading global metadata or per-chapter metadata.
+# Can be 'MOVIE' or 'CHAPTER'.
+mode = 'MOVIE'
+
+# Find extension.
+t = args.MOVIE.rsplit('.', 2)
+if len(t) != 2:
+	print('E: failed to determin file extension.')
+	exit(1)
+fname = t[0]
+extension = t[-1]
+
+# Read configuration file.
+lineno = 0
+for line in open(args.FFSPLIT, 'r'):
+	lineno += 1
+	line = line.strip()
+	# Empty line.
+	if len(line) == 0:
+		continue
+	# Comment line.
+	if (line[0] == ';' or line[0] == '#'):
+		continue
+	# [MOVIE]
+	if line == '[MOVIE]':
+		movies.append({})
+		movies[-1]['metadata'] = {}
+		movies[-1]['chapters'] = []
+		mode = 'MOVIE'
+		continue
+	# [CHAPTER]
+	if line == '[CHAPTER]':
+		movies[-1]['chapters'].append({})
+		movies[-1]['chapters'][-1]['metadata'] = {}
+		mode = 'CHAPTER'
+		continue
+	# Split with slash to get key and value.
+	kv = line.split('=', 2)
+	if len(kv) != 2:
+		print('E: illegal line at line %(lineno)d: %(line)s' % {'lineno': lineno, 'line': line})
+		exit(1)
+	key = kv[0].strip()
+	value = kv[1].strip()
+	# Stores information.
+	if mode == 'MOVIE':
+		movies[-1]['metadata'][key] = value
+	elif mode == 'CHAPTER':
+		if key == 'TIMEBASE':
+			tb = value.split('/', 2)
+			if len(tb) != 2:
+				print('E: illegal line at line %(lineno)d: %(line)s' % {'lineno': lineno, 'line': line})
+				exit(1)
+			numerator = int(tb[0])
+			denominator = int(tb[1])
+			movies[-1]['chapters'][-1][key] = [numerator, denominator]
+		elif (key == 'START' or key == 'END'):
+			movies[-1]['chapters'][-1][key] = int(value)
+		else:
+			movies[-1]['chapters'][-1]['metadata'][key] = value
+
+# TODO: check the validity of configuration.
+
+# Call ffmpeg.
+num = 1
+for movie in movies:
+	outfile = '%(fname)s %(num)02d.%(extension)s' % {'fname': fname, 'num': num, 'extension': extension}
+	if os.path.exists(outfile):
+		print('W: file exists. Skipping...')
+		num += 1
+		continue
+	print('Processing %(num)d of %(all)d...' % {'num': num, 'all': len(movies)})
+	starttime = movie['chapters'][0]['START']
+	endtime = movie['chapters'][-1]['END']
+	timebase_n = movie['chapters'][0]['TIMEBASE'][0]
+	timebase_d = movie['chapters'][0]['TIMEBASE'][1]
+	# Create metadata file.
+	mf = tempfile.NamedTemporaryFile('w')
+	mf.write(';FFMETADATA1\n')
+	# Write global metadata
+	for key,value in movie['metadata'].items():
+		mf.write('%(key)s=%(value)s\n' % {'key': key, 'value': value})
+	# Write chapter data
+	for chapter in movie['chapters']:
+		mf.write('[CHAPTER]\n')
+		mf.write('TIMEBASE=%(numerator)d/%(denominator)d\n' % {'numerator': chapter['TIMEBASE'][0], 'denominator': chapter['TIMEBASE'][1]})
+		mf.write('START=%d\n' % (chapter['START'] - starttime))
+		mf.write('END=%d\n' % (chapter['END'] - starttime))
+		# Write chapter metadata
+		for key,value in chapter['metadata'].items():
+			mf.write('%(key)s=%(value)s\n' % {'key': key, 'value': value})
+	mf.flush()
+	os.system('cat ' + mf.name)
+	# Command line.
+	cmd = AVCONV
+	cmd += ' -i "%(mf)s" -ss %(ss)9f -i "%(input)s" -vcodec copy -acodec copy -t %(t).9f \"%(outfile)s\"' \
+		% { \
+			'input': args.MOVIE, 'mf': mf.name, \
+			'ss': (1.0*starttime*timebase_n/timebase_d), \
+			't': (1.0*(endtime-starttime)*timebase_n/timebase_d), \
+			'outfile': outfile \
+		}
+	print('I: executing: ' + cmd)
+	logfile = '%(fname)s %(num)02d.log' % {'fname': fname, 'num': num}
+	status = os.system(cmd + ' >\"' + logfile + '\" 2>&1')
+	print(status)
+	if status != 0:
+		print('E: ffmpeg failed.')
+		exit(1)
+	num += 1
+

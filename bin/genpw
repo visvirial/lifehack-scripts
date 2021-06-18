@@ -1,0 +1,16 @@
+#!/bin/bash
+# Generates random password
+
+if [ $# -le 0 ]; then
+	echo "Usage: $0 len [STRINGS]"
+	exit
+fi
+
+STRINGS=$2
+if [ x$STRINGS = x ]; then
+	STRINGS=_A-Za-z0-9
+fi
+
+< /dev/urandom tr -dc "$STRINGS" | head -c$1
+echo
+

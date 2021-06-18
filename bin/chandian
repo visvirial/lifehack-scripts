@@ -1,0 +1,19 @@
+#!/usr/bin/env node
+
+if(process.argv.length < 3) {
+	console.log('Usage: chendian HEX');
+	process.exit(1);
+}
+
+var hex = process.argv[2];
+if(hex.length%2 != 0) {
+	hex += '0';
+}
+
+var result = '';
+for(var i=0; i<hex.length/2; i++) {
+	result += hex[hex.length-2*i-2] + hex[hex.length-2*i-1];
+}
+
+console.log(result);
+
