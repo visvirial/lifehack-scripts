@@ -1,4 +1,4 @@
 #!/bin/bash
 
-export PATH="$(pwd)/bin:$PATH"
+export PATH="$(cd $(dirname ${BASH_SOURCE[0]}); pwd)/bin:$PATH"
 
